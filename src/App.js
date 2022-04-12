@@ -1,193 +1,182 @@
-import { faEdit, faTrashCan } from '@fortawesome/free-solid-svg-icons';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { coingeckoAPI, localAPI } from './api';
 import './App.scss';
+
+import { Form } from './components/form/Form';
+import { Table } from './components/table/Table';
+
 
 function App() {
 
-  const [formState, setFormState] = useState({
-                                            id: '',
-                                            tokenSymbol: "",
-                                            amount: "",
-                                            usd: 1231321321,
-                                            mode: "submit"
-                                          });
+  const [formState, setFormState] = useState({mode: "submit"});
+  const [portfolios, setPortfolios] = useState([]);
 
-  const [portfolios, setPortfolios] = useState([
-                                              {
-                                                id: 1,
-                                                tokenSymbol: "BIT",
-                                                amount: 1233,
-                                                usd: 1231321321,
-                                                updating: false
-                                              }
-                                          ]);
+  useEffect(  () => {
+      let tokenIds = [];
+      let resume = [];
 
-  const resetFormState = () => {
-    setFormState({
-        
-          tokenSymbol: "",
-          amount: "",
-          mode: "submit",
-          id: ""
-        
-    });
-  };
+      async function featchData () {
+         await localAPI
+            .get("/portfolios")
+            .then((response) => {
+               response.data.forEach(element=>{
+                  element.amount = new Intl.NumberFormat('en-US').format(element.amount);
+                  tokenIds.push(element.tokenId)
+               })   
+               resume = response.data;
+            })
+            .catch((err) => {
+               throw(err);
+            });
 
-  const onChange = event => {
-    setFormState({
-      
-        ...formState,
-        [event.target.name]: event.target.value
-        
-    });
-  };
+            coingeckoAPI
+               .get(`/simple/price?ids=${tokenIds.toString()}&vs_currencies=usd`)
+               .then((response) => {
+                  setPortfolios( resume.map((element) => {
+                     element.usd = (response.data[element.tokenId].usd * parseFloat(element.amount.replace(/[^0-9.]/g,'')));
+                     element.usd = new Intl.NumberFormat('en-US').format(element.usd);
+                     return element;
+                  }));
+                  
+               })
+               .catch((err) => {
+                  throw(err);
+               });
+         
+      }
+     featchData ()
+   }, []); 
 
-  const update = key => {
-    
-    portfolios[key].updating = true;
-    setFormState({ ...portfolios[key], mode: "edit" })
-    
- };
+   const resetFormState = () => {
+      setFormState({
+         tokenSymbol: "",
+         amount: "",
+         mode: "submit",
+         id: ""
+      });
+   };
 
- const deletePortfolio = key => {
-  
-  portfolios.splice(key, 1);
-  setPortfolios(
-      [...portfolios]);
-};
+   const onChange = event => {
+      let field = event.target.name;
+      let value = event.target.value;
+      if(field === 'amount') 
+         value = event.target.value.replace(/[^0-9.]/g,'');
+      else 
+         field = 'tokenId';
+      setFormState({
+         ...formState,
+         [field]: value
+      });      
+   };
 
-  const onSubmit = event => {
+  const update = (key,id) => {
+      portfolios[key].updating = true;
+      setFormState({ ...portfolios[key], mode: "edit" })
+   };
 
-    event.preventDefault();
-    const tokenSymbol = event.target.querySelector("input[name='tokenSymbol']").value;
-    const amount = event.target.querySelector("input[name='amount']").value;
-
-
-    
-    
-    if (formState.mode === "submit") {
-      
-
-      setPortfolios([
-          
-             ...portfolios,
-             {
-                usd: 1231321321,
-                
-                tokenSymbol,
-                amount,
-                updating: false,
-                id: portfolios[portfolios.length - 1].id + 1
-             }
-          
-            ]);
-    } else if (formState.mode === "edit") {
-
-      const index = portfolios.find((portfolio)=> portfolio.id === formState.id).id;
-      
-      portfolios[index - 1] = {
-              tokenSymbol,
-              amount,
-               usd: 123,
-               updating: false,
-               id: index
-            }
-
-            setPortfolios([
-          
-              ...portfolios,
-           
-             ]);
-      
+   const deletePortfolio = key => {
+      const portfolio = portfolios[key]
+      localAPI
+            .delete(`/portfolios/${portfolio.id}`)
+            .then(() => {
+               portfolios.splice(key, 1);
+               setPortfolios(
+                  [...portfolios]);
+            })
+            .catch((err) => {
+               throw(err);
+            });
    }
 
-    resetFormState();
- };
+   const onSubmit = async event => {
+
+      event.preventDefault();
+
+      const select = event.target.querySelector("select[name='tokenSymbol']")
+      const tokenSymbol = select.options[select.selectedIndex].text;
+      const tokenId = select.value;
+      
+      let amount = event.target.querySelector("input[name='amount']").value;
+      amount = new Intl.NumberFormat('en-US').format(amount);
+
+      let usdValue = 0;
+
+      await coingeckoAPI
+         .get(`/simple/price?ids=${tokenId}&vs_currencies=usd`)
+         .then((response) => {
+               usdValue = (response.data[tokenId].usd * parseFloat(amount.replace(/[^0-9.]/g,'')));
+               usdValue = new Intl.NumberFormat('en-US').format(usdValue);
+            }).catch((err) => {
+            throw(err);
+         });
+         
+      if (formState.mode === "submit") {
+         
+         const data = JSON.stringify({tokenSymbol, tokenId, amount: parseFloat(amount.replace(/[^0-9.]/g,''))});
+         const options = { headers: {"content-type": "application/json"} }
+         localAPI
+            .post("/portfolios", data, options)
+            .then((response) => {
+               setPortfolios([
+                  ...portfolios,
+                  {
+                     id: response.data.id,
+                     tokenSymbol,
+                     tokenId,
+                     amount,
+                     usd: usdValue,
+                     updating: false
+                  }
+               ]); 
+            })
+            .catch((err) => {
+               throw(err);
+            });
+
+      } else if (formState.mode === "edit") {
+
+         const index = portfolios.findIndex((portfolio)=> portfolio.id === formState.id);
+
+         const data = JSON.stringify({tokenSymbol, tokenId, amount: parseFloat(amount.replace(/[^0-9.]/g,''))});
+         const options = { headers: {"content-type": "application/json"} }
+         localAPI
+            .put(`/portfolios/${formState.id}`, data, options)
+            .then(() => {
+               portfolios[index] = {
+                  id: formState.id,
+                  tokenId,
+                  tokenSymbol,
+                  amount,
+                  usd: usdValue,
+                  updating: false,
+                  
+               }
+               setPortfolios([
+                  ...portfolios
+               ])
+            })
+            .catch((err) => {
+               throw(err);
+            });
+
+      }
+
+      resetFormState();
+   };
 
    
-  return (
-    <div className="App">
-      
-      <Form 
-        formState={formState}
-        onChange={onChange} 
-        onSubmit={onSubmit}
-      />
-      <Table portfolios={portfolios} update={update} deletePortfolio={deletePortfolio} />
-            
-    </div>
-  );
+   return (
+      <div className="App">
+         <Form 
+            formState={formState}
+            onChange={onChange} 
+            onSubmit={onSubmit} />
+         <Table 
+            portfolios={portfolios} 
+            update={update} 
+            deletePortfolio={deletePortfolio} />
+      </div>
+   );
 }
-
-const Form = ({ formState, onChange, onSubmit }) => {
-  return (
-     <form className="form" onSubmit={onSubmit}>
-        <fieldset>
-           <Field
-              name="tokenSymbol"
-              label="Token Symbol"
-              value={formState.tokenSymbol}
-              onChange={onChange}
-           />
-           <Field
-              name="amount"
-              label="Amount"
-              value={formState.amount}
-              onChange={onChange}
-           />
-        </fieldset>
-        <button> {formState.mode} </button>
-     </form>
-  );
-};
-
-const Field = ({ label = "", name = "", value = "", onChange }) => {
-  return (
-     <div className="field">
-        <label>{label}</label>
-        <input type="text" name={name} value={value} onChange={onChange} />
-     </div>
-  );
-};
-
-const Table = ({ portfolios = [], update, deletePortfolio }) => {
-  return (
-     <div className="table">
-        <div className="table-header">
-           <div className="row">
-              <div className="column">Token</div>
-              <div className="column">Quantity</div>
-              <div className="column">Amount in USD</div>
-              <div className="column">Options</div>
-           </div>
-        </div>
-        <div className="table-body">
-           {portfolios.map((portfolio, key) => {
-              return (
-                 <div key={key} className={`row ${portfolio.updating ? "updating" : ""}`}>
-                    <div className="column">{portfolio.tokenSymbol}</div>
-                    <div className="column">{portfolio.amount}</div>
-                    <div className="column">{portfolio.usd}</div>
-                    <div className="column">
-                       <button
-                          className="icon"
-                          onClick={() => update(key)}
-                       >
-                         <FontAwesomeIcon icon={faEdit} />
-                          
-                       </button>
-                       <button className="icon" onClick={() => deletePortfolio(key)}>
-                        <FontAwesomeIcon icon={faTrashCan} />
-                       </button>
-                    </div>
-                 </div>
-              );
-           })}
-        </div>
-     </div>
-  );
-};
-
 
 export default App;

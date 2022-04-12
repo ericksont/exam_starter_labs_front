@@ -15,6 +15,7 @@
      width: 100%;
      color: black;
      flex-wrap: wrap;
+     text-transform: uppercase;
   }
   .table-header {
      background-color: #36304a;
@@ -69,7 +70,7 @@
            margin: 0 1em 0 0;
            width: 250px;
         }
-        input {
+        input, select {
            padding: 0.5em 0.6em;
            display: inline-block;
            border: 1px solid #ccc;
@@ -78,7 +79,10 @@
            vertical-align: middle;
            box-sizing: border-box;
            width: 400px;
+           background-color: #fff;
+           text-transform: uppercase;
         }
+        
      }
   }
   button {
